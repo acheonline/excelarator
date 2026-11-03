@@ -1,0 +1,78 @@
+name: RepoKeeper Agent
+
+on:
+  issue_comment:
+    types: [created]
+  issues:
+    types: [labeled]
+  pull_request_target:
+    types: [labeled]
+
+jobs:
+  agent:
+    runs-on: [self-hosted, repokeeper]
+    if: |
+      (
+        github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '/repokeeper go') &&
+        (
+          github.event.comment.author_association == 'OWNER' ||
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        )
+      ) ||
+      (
+        github.event_name == 'issues' &&
+        github.event.label.name == 'agent-todo'
+      ) ||
+      (
+        github.event_name == 'pull_request_target' &&
+        github.event.label.name == 'agent-fix'
+      )
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine context
+        id: ctx
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            echo "issue=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "pr=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.issue.pull_request }}" != "" ]; then
+            echo "issue=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+            echo "pr=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "issue=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+            echo "pr=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install RepoKeeper
+        run: |
+          python3.10 -m pip install --upgrade pip
+          python3.10 -m pip install repokeeper
+
+      - name: Add pip user bin to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Configure RepoKeeper backend to Pi
+        run: |
+          cat > repokeeper.yml << 'EOF'
+          backend: pi
+          EOF
+
+      - name: Run RepoKeeper Agent
+        run: |
+          repokeeper agent \
+            --repo "${{ github.repository }}" \
+            --issue "${{ steps.ctx.outputs.issue }}" \
+            ${{ steps.ctx.outputs.pr != '' && format('--pr {0}', steps.ctx.outputs.pr) || '' }}
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL || 'https://api.deepseek.com' }}
+          GITHUB_TOKEN: ${{ secrets.REPOKEEPER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
