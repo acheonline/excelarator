@@ -1,0 +1,21 @@
+maintainer: ваш-github-username
+
+style:
+  testing: cargo test
+  formatting: rustfmt
+  linting: true
+
+agent:
+  backend: pi                  # для сложных задач (DuckDB, воркспейс)
+  model: deepseek-chat
+  verify_commands:             # что запускать перед созданием PR
+    - cargo build
+    - cargo test
+
+tech:
+  preferred:
+    - rust
+    - duckdb
+    - axum
+  avoid:
+    - go
